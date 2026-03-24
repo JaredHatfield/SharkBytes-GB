@@ -1,0 +1,14 @@
+.DS_Store
+dist/
+tools/gbdk/
+tools/gbdk-sdk/
+*.gb
+*.ihx
+*.map
+*.noi
+*.sym
+*.lst
+*.cdb
+*.adb
+*.asm
+*.rst
