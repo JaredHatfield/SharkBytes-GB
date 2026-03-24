@@ -5,9 +5,13 @@ gbdk_home := if env_var_or_default("GBDK_HOME", "") != "" { env_var_or_default("
 lcc := gbdk_home + "/bin/lcc"
 rom := justfile_directory() + "/dist/" + project + ".gb"
 build_artifacts := "dist/*.gb dist/*.ihx dist/*.map dist/*.noi dist/*.sym dist/*.lst dist/*.cdb dist/*.adb dist/*.asm dist/*.rst"
-sprite_input := "src/sprites/diver_standing.piskel"
-sprite_output := "src/sprites/diver_title_sprite"
-build_sources := "src/main.c " + sprite_output + ".c"
+title_sprite_input := "src/sprites/diver_standing.piskel"
+title_sprite_output := "src/sprites/diver_title_sprite"
+diver_swimming_input := "src/sprites/diver_swimming.piskel"
+diver_swimming_output := "src/sprites/diver_swimming_sprite"
+fish_yellow_input := "src/sprites/fish_yellow.piskel"
+fish_yellow_output := "src/sprites/fish_yellow_sprite"
+build_sources := "src/main.c " + title_sprite_output + ".c " + diver_swimming_output + ".c " + fish_yellow_output + ".c"
 
 # List available commands.
 default:
@@ -15,7 +19,9 @@ default:
 
 # Regenerate sprite assets from source art.
 sprites:
-  python3 scripts/piskel_to_gbdk_sprite.py "{{sprite_input}}" "{{sprite_output}}" --symbol diver_title_sprite --scale 3
+  python3 scripts/piskel_to_gbdk_sprite.py "{{title_sprite_input}}" "{{title_sprite_output}}" --symbol diver_title_sprite --scale 3
+  python3 scripts/piskel_to_gbdk_sprite.py "{{diver_swimming_input}}" "{{diver_swimming_output}}" --symbol diver_swimming_sprite
+  python3 scripts/piskel_to_gbdk_sprite.py "{{fish_yellow_input}}" "{{fish_yellow_output}}" --symbol fish_yellow_sprite
 
 # Build the Game Boy ROM.
 build: sprites

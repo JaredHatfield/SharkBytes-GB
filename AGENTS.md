@@ -12,7 +12,7 @@ Key files:
 
 Workflow:
 - Edit sprite art in `.piskel` files, not in generated `.c` or `.h` files.
-- Run `just sprites` to regenerate both normal-size and title-screen sprite code from `src/sprites/mint.piskel`.
+- Run `just sprites` to regenerate both normal-size and title-screen sprite code from `src/sprites/diver.piskel`.
 - `just build` regenerates sprites and then builds the ROM.
 - When gameplay flow, controls, progression, or screen behavior changes, update `GAMEPLAY.md` in the same change.
 
