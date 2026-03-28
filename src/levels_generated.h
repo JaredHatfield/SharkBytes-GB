@@ -10,8 +10,8 @@
 #define LEVELS_MAX_FISH_ON_SCREEN 2u
 
 typedef enum LevelFishKind {
-    LEVEL_FISH_KIND_YELLOW = 0,
-    LEVEL_FISH_KIND_STRIPED
+    LEVEL_FISH_KIND_CLOWN = 0,
+    LEVEL_FISH_KIND_PUFFER
 } LevelFishKind;
 
 typedef struct LevelFishTypeDefinition {
@@ -21,6 +21,7 @@ typedef struct LevelFishTypeDefinition {
     UINT8 maximum_x;
     UINT8 speed_fixed;
     UINT16 lifetime_frames;
+    UINT16 animation_frames;
     UINT8 start_from_left;
 } LevelFishTypeDefinition;
 

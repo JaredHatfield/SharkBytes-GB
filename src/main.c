@@ -6,8 +6,8 @@
 #include "levels_generated.h"
 #include "sprites/diver_swimming_sprite.h"
 #include "sprites/diver_title_sprite.h"
-#include "sprites/fish_striped_sprite.h"
-#include "sprites/fish_yellow_sprite.h"
+#include "sprites/fish_clown_sprite.h"
+#include "sprites/fish_puffer_sprite.h"
 
 typedef enum ScreenState {
     SCREEN_TITLE = 0,
@@ -49,6 +49,7 @@ typedef struct ActiveFishState {
     UINT8 sprite_count;
     UINT8 kind;
     UINT16 lifetime_remaining;
+    UINT16 animation_frames;
     UINT8 active;
 } ActiveFishState;
 
@@ -74,11 +75,11 @@ typedef struct AirPickupState {
 #define PLAYER_TILE_FIRST 0u
 #define PLAYER_SPRITE_FIRST 0u
 #define PLAYER_SPRITE_COUNT DIVER_SWIMMING_SPRITE_TILES_PER_FRAME
-#define FISH_YELLOW_TILE_FIRST (PLAYER_TILE_FIRST + DIVER_SWIMMING_SPRITE_TILE_COUNT)
-#define FISH_STRIPED_TILE_FIRST (FISH_YELLOW_TILE_FIRST + FISH_YELLOW_SPRITE_TILE_COUNT)
-#define AIR_PICKUP_TILE_FIRST (FISH_STRIPED_TILE_FIRST + FISH_STRIPED_SPRITE_TILE_COUNT)
+#define FISH_CLOWN_TILE_FIRST (PLAYER_TILE_FIRST + DIVER_SWIMMING_SPRITE_TILE_COUNT)
+#define FISH_PUFFER_TILE_FIRST (FISH_CLOWN_TILE_FIRST + FISH_CLOWN_SPRITE_TILE_COUNT)
+#define AIR_PICKUP_TILE_FIRST (FISH_PUFFER_TILE_FIRST + FISH_PUFFER_SPRITE_TILE_COUNT)
 
-#define FISH_SLOT_SPRITE_STRIDE 2u
+#define FISH_SLOT_SPRITE_STRIDE 1u
 #define FISH_SPRITE_FIRST (PLAYER_SPRITE_FIRST + PLAYER_SPRITE_COUNT)
 #define AIR_PICKUP_SPRITE_FIRST (FISH_SPRITE_FIRST + (LEVELS_MAX_FISH_ON_SCREEN * FISH_SLOT_SPRITE_STRIDE))
 
@@ -87,8 +88,11 @@ typedef struct AirPickupState {
 #define HUD_BKG_LINE_TILE (HUD_BKG_TILE_FIRST + 1u)
 #define HUD_BKG_HEART_FULL_TILE (HUD_BKG_TILE_FIRST + 2u)
 #define HUD_BKG_HEART_EMPTY_TILE (HUD_BKG_TILE_FIRST + 3u)
-#define HUD_BKG_AIR_TILE (HUD_BKG_TILE_FIRST + 4u)
-#define HUD_BKG_CAUGHT_FISH_TILE (HUD_BKG_TILE_FIRST + 5u)
+#define HUD_BKG_AIR_FULL_TILE (HUD_BKG_TILE_FIRST + 4u)
+#define HUD_BKG_AIR_EMPTY_TILE (HUD_BKG_TILE_FIRST + 5u)
+#define HUD_BKG_CAPTURE_EMPTY_TILE (HUD_BKG_TILE_FIRST + 6u)
+#define HUD_BKG_CAPTURE_CLOWN_TILE (HUD_BKG_TILE_FIRST + 7u)
+#define HUD_BKG_CAPTURE_PUFFER_TILE (HUD_BKG_TILE_FIRST + 8u)
 
 #define HEART_HUD_X 1u
 #define HEART_HUD_Y 0u
@@ -98,7 +102,7 @@ typedef struct AirPickupState {
 
 #define BOTTOM_HUD_DIVIDER_ROW 15u
 #define CAPTURE_ROW 16u
-#define CAPTURE_HUD_X 5u
+#define CAPTURE_HUD_X 1u
 
 #define PLAYFIELD_VISIBLE_TOP 24u
 #define PLAYFIELD_VISIBLE_BOTTOM 119u
@@ -140,8 +144,14 @@ static const unsigned char hud_tiles[] = {
     0x00, 0x00, 0x6C, 0x6C, 0xFE, 0xFE, 0x92, 0x92,
     0x82, 0x82, 0x44, 0x44, 0x28, 0x28, 0x10, 0x10,
     /* bubble */
+    0x18, 0x00, 0x3C, 0x18, 0x7E, 0x3C, 0xFF, 0x7E,
+    0xFF, 0x7E, 0x7E, 0x3C, 0x3C, 0x18, 0x18, 0x00,
+    /* empty bubble */
     0x18, 0x00, 0x24, 0x00, 0x42, 0x00, 0x81, 0x00,
-    0x81, 0x00, 0x42, 0x00, 0x24, 0x00, 0x18, 0x00
+    0x81, 0x00, 0x42, 0x00, 0x24, 0x00, 0x18, 0x00,
+    /* empty capture slot */
+    0x7E, 0x00, 0x42, 0x00, 0x42, 0x00, 0x42, 0x00,
+    0x42, 0x00, 0x42, 0x00, 0x42, 0x00, 0x7E, 0x00
 };
 
 static PlayerState player;
@@ -152,6 +162,7 @@ static UINT16 level_animation_tick = 0u;
 static UINT8 player_air = 0u;
 static UINT8 player_health = 0u;
 static UINT8 captured_fish_count = 0u;
+static UINT8 captured_fish_kinds[MAX_CAPTURED_FISH];
 static UINT8 current_level_index = 0u;
 static UINT8 next_fish_type_index = 0u;
 static UINT8 rng_state = 0x5Au;
@@ -206,6 +217,22 @@ static UINT8 apply_render_offset(UINT8 value, INT8 offset, UINT8 minimum, UINT8 
     }
 
     return (UINT8)adjusted;
+}
+
+static UINT8 clamp_uint8(UINT8 value, UINT8 minimum, UINT8 maximum) {
+    if (value < minimum) {
+        return minimum;
+    }
+
+    if (value > maximum) {
+        return maximum;
+    }
+
+    return value;
+}
+
+static UINT8 absolute_difference_uint8(UINT8 left, UINT8 right) {
+    return (left > right) ? (UINT8)(left - right) : (UINT8)(right - left);
 }
 
 static UINT8 next_random_u8(void) {
@@ -442,11 +469,37 @@ static void compute_fish_render_position(UINT8 slot_index, UINT8 *render_x, UINT
 }
 
 static const unsigned char *fish_hitboxes_for_kind(UINT8 kind) {
-    if (kind == LEVEL_FISH_KIND_YELLOW) {
-        return fish_yellow_sprite_frame_hitboxes;
+    if (kind == LEVEL_FISH_KIND_CLOWN) {
+        return fish_clown_sprite_frame_hitboxes;
     }
 
-    return fish_striped_sprite_frame_hitboxes;
+    return fish_puffer_sprite_frame_hitboxes;
+}
+
+static UINT8 fish_capture_bkg_tile_for_kind(UINT8 kind) {
+    if (kind == LEVEL_FISH_KIND_CLOWN) {
+        return HUD_BKG_CAPTURE_CLOWN_TILE;
+    }
+
+    return HUD_BKG_CAPTURE_PUFFER_TILE;
+}
+
+static UINT8 fish_frame_count_for_kind(UINT8 kind) {
+    if (kind == LEVEL_FISH_KIND_CLOWN) {
+        return FISH_CLOWN_SPRITE_FRAME_COUNT;
+    }
+
+    return FISH_PUFFER_SPRITE_FRAME_COUNT;
+}
+
+static UINT8 current_fish_frame(UINT8 slot_index, const ActiveFishState *fish) {
+    UINT8 frame_count = fish_frame_count_for_kind(fish->kind);
+
+    if ((frame_count < 2u) || (fish->animation_frames == 0u)) {
+        return 0u;
+    }
+
+    return (UINT8)(((level_animation_tick + (slot_index * fish->animation_frames)) / fish->animation_frames) % frame_count);
 }
 
 static void draw_diver_sprite(UINT8 x, UINT8 y, UINT8 frame, UINT8 facing_left) {
@@ -496,12 +549,14 @@ static void update_level_hud(void) {
     }
 
     for (index = 0u; index != PLAYER_MAX_AIR; ++index) {
-        tile = (index < player_air) ? HUD_BKG_AIR_TILE : HUD_BKG_BLANK_TILE;
+        tile = (index < player_air) ? HUD_BKG_AIR_FULL_TILE : HUD_BKG_AIR_EMPTY_TILE;
         set_single_bkg_tile((UINT8)(AIR_HUD_X + index), AIR_HUD_Y, tile);
     }
 
     for (index = 0u; index != MAX_CAPTURED_FISH; ++index) {
-        tile = (index < captured_fish_count) ? HUD_BKG_CAUGHT_FISH_TILE : HUD_BKG_BLANK_TILE;
+        tile = (index < captured_fish_count)
+            ? fish_capture_bkg_tile_for_kind(captured_fish_kinds[index])
+            : HUD_BKG_CAPTURE_EMPTY_TILE;
         set_single_bkg_tile((UINT8)(CAPTURE_HUD_X + index), CAPTURE_ROW, tile);
     }
 }
@@ -540,25 +595,26 @@ static void draw_level_result_message(UINT8 won) {
 
 static void load_level_assets(void) {
     set_sprite_data(PLAYER_TILE_FIRST, DIVER_SWIMMING_SPRITE_TILE_COUNT, diver_swimming_sprite_tiles);
-    set_sprite_data(FISH_YELLOW_TILE_FIRST, FISH_YELLOW_SPRITE_TILE_COUNT, fish_yellow_sprite_tiles);
-    set_sprite_data(FISH_STRIPED_TILE_FIRST, FISH_STRIPED_SPRITE_TILE_COUNT, fish_striped_sprite_tiles);
+    set_sprite_data(FISH_CLOWN_TILE_FIRST, FISH_CLOWN_SPRITE_TILE_COUNT, fish_clown_sprite_tiles);
+    set_sprite_data(FISH_PUFFER_TILE_FIRST, FISH_PUFFER_SPRITE_TILE_COUNT, fish_puffer_sprite_tiles);
     set_sprite_data(AIR_PICKUP_TILE_FIRST, 1u, &hud_tiles[64]);
 
-    set_bkg_data(HUD_BKG_TILE_FIRST, 5u, hud_tiles);
-    set_bkg_data(HUD_BKG_CAUGHT_FISH_TILE, 1u, fish_yellow_sprite_tiles);
+    set_bkg_data(HUD_BKG_TILE_FIRST, 7u, hud_tiles);
+    set_bkg_data(HUD_BKG_CAPTURE_CLOWN_TILE, 1u, fish_clown_sprite_tiles);
+    set_bkg_data(HUD_BKG_CAPTURE_PUFFER_TILE, 1u, fish_puffer_sprite_tiles);
 }
 
 static void configure_active_fish_from_kind(ActiveFishState *fish) {
-    if (fish->kind == LEVEL_FISH_KIND_YELLOW) {
-        fish->tile_first = FISH_YELLOW_TILE_FIRST;
-        fish->sprite_count = FISH_YELLOW_SPRITE_TILES_PER_FRAME;
-        fish->width = FISH_YELLOW_SPRITE_WIDTH;
-        fish->height = FISH_YELLOW_SPRITE_HEIGHT;
+    if (fish->kind == LEVEL_FISH_KIND_CLOWN) {
+        fish->tile_first = FISH_CLOWN_TILE_FIRST;
+        fish->sprite_count = FISH_CLOWN_SPRITE_TILES_PER_FRAME;
+        fish->width = FISH_CLOWN_SPRITE_WIDTH;
+        fish->height = FISH_CLOWN_SPRITE_HEIGHT;
     } else {
-        fish->tile_first = FISH_STRIPED_TILE_FIRST;
-        fish->sprite_count = FISH_STRIPED_SPRITE_TILES_PER_FRAME;
-        fish->width = FISH_STRIPED_SPRITE_WIDTH;
-        fish->height = FISH_STRIPED_SPRITE_HEIGHT;
+        fish->tile_first = FISH_PUFFER_TILE_FIRST;
+        fish->sprite_count = FISH_PUFFER_SPRITE_TILES_PER_FRAME;
+        fish->width = FISH_PUFFER_SPRITE_WIDTH;
+        fish->height = FISH_PUFFER_SPRITE_HEIGHT;
     }
 }
 
@@ -575,9 +631,30 @@ static UINT8 count_active_fish(void) {
     return count;
 }
 
+static UINT8 spawn_fish_from_left_side(void) {
+    UINT8 player_midpoint_x = (UINT8)((LEVEL_MIN_X + LEVEL_MAX_X) >> 1);
+
+    return FROM_FIXED(player.x) >= player_midpoint_x;
+}
+
+static UINT8 choose_fish_spawn_y(const LevelFishTypeDefinition *fish_type, const ActiveFishState *fish) {
+    UINT8 minimum_y = LEVEL_MIN_Y;
+    UINT8 maximum_y = (UINT8)(PLAYFIELD_VISIBLE_BOTTOM - fish->height + 17u);
+    UINT8 preferred_y = clamp_uint8(fish_type->spawn_y, minimum_y, maximum_y);
+    UINT8 mirrored_y = (UINT8)(minimum_y + (maximum_y - preferred_y));
+    UINT8 player_y = FROM_FIXED(player.y);
+
+    if (absolute_difference_uint8(player_y, mirrored_y) > absolute_difference_uint8(player_y, preferred_y)) {
+        return mirrored_y;
+    }
+
+    return preferred_y;
+}
+
 static void spawn_fish_into_slot(UINT8 slot_index) {
     const LevelFishTypeDefinition *fish_type;
     ActiveFishState *fish;
+    UINT8 spawn_from_left;
 
     if (current_level->fish_type_count == 0u) {
         return;
@@ -589,13 +666,15 @@ static void spawn_fish_into_slot(UINT8 slot_index) {
     fish = &active_fish[slot_index];
     fish->active = 1u;
     fish->kind = fish_type->kind;
-    fish->y = fish_type->spawn_y;
     fish->minimum_x = fish_type->minimum_x;
     fish->maximum_x = fish_type->maximum_x;
     fish->lifetime_remaining = fish_type->lifetime_frames;
-    fish->velocity_x = fish_type->start_from_left ? fish_type->speed_fixed : (INT16)(-(INT16)fish_type->speed_fixed);
-    fish->x = TO_FIXED(fish_type->start_from_left ? fish_type->minimum_x : fish_type->maximum_x);
+    fish->animation_frames = fish_type->animation_frames;
     configure_active_fish_from_kind(fish);
+    fish->y = choose_fish_spawn_y(fish_type, fish);
+    spawn_from_left = spawn_fish_from_left_side();
+    fish->velocity_x = spawn_from_left ? fish_type->speed_fixed : (INT16)(-(INT16)fish_type->speed_fixed);
+    fish->x = TO_FIXED(spawn_from_left ? fish_type->minimum_x : fish_type->maximum_x);
 }
 
 static void maintain_fish_population(void) {
@@ -639,6 +718,10 @@ static void initialize_level(UINT8 level_index) {
     next_fish_type_index = 0u;
     air_loss_timer = current_level->air.loss_frames;
     level_failure_reason = LEVEL_FAILURE_AIR;
+
+    for (slot_index = 0u; slot_index != MAX_CAPTURED_FISH; ++slot_index) {
+        captured_fish_kinds[slot_index] = LEVEL_FISH_KIND_CLOWN;
+    }
 
     for (slot_index = 0u; slot_index != LEVELS_MAX_FISH_ON_SCREEN; ++slot_index) {
         active_fish[slot_index].active = 0u;
@@ -788,13 +871,17 @@ static void update_air_system(void) {
 
 static void render_fish(UINT8 slot_index, const ActiveFishState *fish, UINT8 x, UINT8 y) {
     UINT8 sprite_index = fish_slot_sprite_index(slot_index);
-    UINT8 fish_attributes = (fish->velocity_x > 0) ? S_FLIPX : 0u;
+    UINT8 fish_attributes = (fish->velocity_x < 0) ? S_FLIPX : 0u;
+    UINT8 frame = current_fish_frame(slot_index, fish);
 
-    if (fish->kind == LEVEL_FISH_KIND_YELLOW) {
-        fish_yellow_sprite_show(fish->tile_first, sprite_index, 0u, x, y);
-        hide_sprite_range((UINT8)(sprite_index + 1u), 1u);
+    if (fish->kind == LEVEL_FISH_KIND_CLOWN) {
+        fish_clown_sprite_show(fish->tile_first, sprite_index, frame, x, y);
     } else {
-        fish_striped_sprite_show(fish->tile_first, sprite_index, 0u, x, y);
+        fish_puffer_sprite_show(fish->tile_first, sprite_index, frame, x, y);
+    }
+
+    if (fish->sprite_count < FISH_SLOT_SPRITE_STRIDE) {
+        hide_sprite_range((UINT8)(sprite_index + fish->sprite_count), (UINT8)(FISH_SLOT_SPRITE_STRIDE - fish->sprite_count));
     }
 
     set_sprite_prop_range(sprite_index, fish->sprite_count, fish_attributes);
@@ -835,6 +922,7 @@ static void capture_fish(UINT8 slot_index) {
     hide_sprite_range(fish_slot_sprite_index(slot_index), FISH_SLOT_SPRITE_STRIDE);
 
     if (captured_fish_count < MAX_CAPTURED_FISH) {
+        captured_fish_kinds[captured_fish_count] = active_fish[slot_index].kind;
         ++captured_fish_count;
     }
 }
@@ -862,6 +950,7 @@ static void check_level_collisions(void) {
     UINT8 fish_top;
     UINT8 fish_width;
     UINT8 fish_height;
+    UINT8 fish_frame;
     UINT8 bubble_left;
     UINT8 bubble_top;
 
@@ -885,13 +974,14 @@ static void check_level_collisions(void) {
         }
 
         compute_fish_render_position(slot_index, &fish_left, &fish_top);
+        fish_frame = current_fish_frame(slot_index, &active_fish[slot_index]);
         resolve_frame_hitbox(
             fish_left,
             fish_top,
             active_fish[slot_index].width,
             fish_hitboxes_for_kind(active_fish[slot_index].kind),
-            0u,
-            active_fish[slot_index].velocity_x > 0,
+            fish_frame,
+            active_fish[slot_index].velocity_x < 0,
             &fish_left,
             &fish_top,
             &fish_width,

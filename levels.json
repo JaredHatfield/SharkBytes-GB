@@ -5,13 +5,13 @@
       "implemented": true,
       "starting_hearts": 3,
       "starting_air": 8,
-      "goal_fish": 2,
+      "goal_fish": 10,
       "player": {
         "animation_seconds_per_frame": 1
       },
       "air": {
         "enabled": true,
-        "air_gain": 2,
+        "air_gain": 1,
         "loss_every_seconds": 4,
         "spawn_every_seconds": 3,
         "rise_pixels_per_second": 8
@@ -20,22 +20,24 @@
         "max_on_screen": 2,
         "types": [
           {
-            "kind": "yellow",
+            "kind": "clown",
             "speed_pixels_per_second": 24,
             "lifetime_seconds": 20,
             "spawn_y": 56,
             "min_x": 16,
             "max_x": 152,
-            "start_side": "left"
+            "start_side": "left",
+            "animation_seconds_per_frame": 1
           },
           {
-            "kind": "striped",
-            "speed_pixels_per_second": 18,
+            "kind": "puffer",
+            "speed_pixels_per_second": 14,
             "lifetime_seconds": 20,
-            "spawn_y": 88,
+            "spawn_y": 72,
             "min_x": 16,
             "max_x": 152,
-            "start_side": "right"
+            "start_side": "left",
+            "animation_seconds_per_frame": 1
           }
         ]
       }

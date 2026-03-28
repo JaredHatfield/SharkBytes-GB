@@ -9,13 +9,13 @@ title_sprite_input := "src/sprites/diver_standing.piskel"
 title_sprite_output := "src/sprites/diver_title_sprite"
 diver_swimming_input := "src/sprites/diver_swimming.piskel"
 diver_swimming_output := "src/sprites/diver_swimming_sprite"
-fish_yellow_input := "src/sprites/fish_yellow.piskel"
-fish_yellow_output := "src/sprites/fish_yellow_sprite"
-fish_striped_input := "src/sprites/fish_striped.piskel"
-fish_striped_output := "src/sprites/fish_striped_sprite"
+fish_clown_input := "src/sprites/fish_clown.piskel"
+fish_clown_output := "src/sprites/fish_clown_sprite"
+fish_puffer_input := "src/sprites/fish_puffer.piskel"
+fish_puffer_output := "src/sprites/fish_puffer_sprite"
 levels_input := "levels.json"
 levels_output := "src/levels_generated"
-build_sources := "src/main.c " + levels_output + ".c " + title_sprite_output + ".c " + diver_swimming_output + ".c " + fish_yellow_output + ".c " + fish_striped_output + ".c"
+build_sources := "src/main.c " + levels_output + ".c " + title_sprite_output + ".c " + diver_swimming_output + ".c " + fish_clown_output + ".c " + fish_puffer_output + ".c"
 
 # List available commands.
 default:
@@ -25,8 +25,8 @@ default:
 sprites:
   python3 scripts/piskel_to_gbdk_sprite.py "{{title_sprite_input}}" "{{title_sprite_output}}" --symbol diver_title_sprite --scale 3
   python3 scripts/piskel_to_gbdk_sprite.py "{{diver_swimming_input}}" "{{diver_swimming_output}}" --symbol diver_swimming_sprite
-  python3 scripts/piskel_to_gbdk_sprite.py "{{fish_yellow_input}}" "{{fish_yellow_output}}" --symbol fish_yellow_sprite
-  python3 scripts/piskel_to_gbdk_sprite.py "{{fish_striped_input}}" "{{fish_striped_output}}" --symbol fish_striped_sprite
+  python3 scripts/piskel_to_gbdk_sprite.py "{{fish_clown_input}}" "{{fish_clown_output}}" --symbol fish_clown_sprite
+  python3 scripts/piskel_to_gbdk_sprite.py "{{fish_puffer_input}}" "{{fish_puffer_output}}" --symbol fish_puffer_sprite
 
 # Compile authored level definitions into C data.
 levels:

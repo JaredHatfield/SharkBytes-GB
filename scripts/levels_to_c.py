@@ -11,8 +11,8 @@ MAX_HEARTS = 3
 MAX_AIR = 10
 
 FISH_KIND_MAP = {
-    "yellow": "LEVEL_FISH_KIND_YELLOW",
-    "striped": "LEVEL_FISH_KIND_STRIPED",
+    "clown": "LEVEL_FISH_KIND_CLOWN",
+    "puffer": "LEVEL_FISH_KIND_PUFFER",
 }
 
 START_SIDE_MAP = {
@@ -83,6 +83,13 @@ def parse_fish_type(level_index: int, fish_index: int, raw: dict) -> dict:
         "lifetime_frames": seconds_to_frames(
             require_number(raw.get("lifetime_seconds"), f"{prefix}.lifetime_seconds"),
             f"{prefix}.lifetime_seconds",
+        ),
+        "animation_frames": seconds_to_frames(
+            require_number(
+                raw.get("animation_seconds_per_frame"),
+                f"{prefix}.animation_seconds_per_frame",
+            ),
+            f"{prefix}.animation_seconds_per_frame",
         ),
         "start_from_left": START_SIDE_MAP[start_side],
     }
@@ -215,8 +222,8 @@ def render_header(level_count: int, max_fish_on_screen: int) -> str:
 #define LEVELS_MAX_FISH_ON_SCREEN {max_fish_on_screen}u
 
 typedef enum LevelFishKind {{
-    LEVEL_FISH_KIND_YELLOW = 0,
-    LEVEL_FISH_KIND_STRIPED
+    LEVEL_FISH_KIND_CLOWN = 0,
+    LEVEL_FISH_KIND_PUFFER
 }} LevelFishKind;
 
 typedef struct LevelFishTypeDefinition {{
@@ -226,6 +233,7 @@ typedef struct LevelFishTypeDefinition {{
     UINT8 maximum_x;
     UINT8 speed_fixed;
     UINT16 lifetime_frames;
+    UINT16 animation_frames;
     UINT8 start_from_left;
 }} LevelFishTypeDefinition;
 
@@ -274,7 +282,7 @@ def render_c(levels: list[dict], source_name: str) -> str:
             lines.append(f"static const LevelFishTypeDefinition level_{index}_fish_types[] = {{")
             for fish_type in fish_types:
                 lines.append(
-                    "    { %s, %uu, %uu, %uu, %uu, %uu, %uu },"
+                    "    { %s, %uu, %uu, %uu, %uu, %uu, %uu, %uu },"
                     % (
                         fish_type["kind_symbol"],
                         fish_type["spawn_y"],
@@ -282,6 +290,7 @@ def render_c(levels: list[dict], source_name: str) -> str:
                         fish_type["maximum_x"],
                         fish_type["speed_fixed"],
                         fish_type["lifetime_frames"],
+                        fish_type["animation_frames"],
                         fish_type["start_from_left"],
                     )
                 )
