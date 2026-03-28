@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
+import argparse
 import json
-import sys
 from pathlib import Path
 
 
@@ -9,6 +9,9 @@ FPS = 60
 FIX_SCALE = 16
 MAX_HEARTS = 3
 MAX_AIR = 10
+REPO_ROOT = Path(__file__).resolve().parent.parent
+DEFAULT_LEVELS_DIR = REPO_ROOT / "src" / "levels"
+DEFAULT_OUTPUT_PREFIX = REPO_ROOT / "src" / "levels_generated"
 
 FISH_KIND_MAP = {
     "clown": "LEVEL_FISH_KIND_CLOWN",
@@ -327,18 +330,81 @@ def render_c(levels: list[dict], source_name: str) -> str:
     return "\n".join(lines)
 
 
-def main() -> int:
-    if len(sys.argv) != 3:
-        print("usage: levels_to_c.py <levels.json> <output_prefix>", file=sys.stderr)
-        return 1
-
-    source = Path(sys.argv[1])
-    output_prefix = Path(sys.argv[2])
+def load_levels_from_legacy_file(source: Path) -> list[dict]:
     data = json.loads(source.read_text())
-
     levels_raw = data.get("levels")
     if not isinstance(levels_raw, list) or not levels_raw:
         fail("levels must be a non-empty array")
+    return levels_raw
+
+
+def load_levels_from_directory(source_dir: Path) -> list[dict]:
+    level_paths = sorted(source_dir.glob("*.json"), key=lambda path: path.name)
+    levels_raw = []
+
+    if not level_paths:
+        fail(f"no level json files found in {source_dir}")
+
+    for expected_number, level_path in enumerate(level_paths, start=1):
+        stem = level_path.stem
+        if not stem.isdigit():
+            fail(f"{level_path.name} must use a numeric filename like 01.json")
+        if int(stem) != expected_number:
+            fail(
+                f"expected level file {expected_number:02d}.json but found {level_path.name}"
+            )
+
+        raw_level = json.loads(level_path.read_text())
+        if not isinstance(raw_level, dict):
+            fail(f"{level_path.name} must contain a single level object")
+        levels_raw.append(raw_level)
+
+    return levels_raw
+
+
+def display_path(path: Path) -> str:
+    try:
+        return path.relative_to(REPO_ROOT).as_posix()
+    except ValueError:
+        return path.as_posix()
+
+
+def resolve_sources(source: Path | None, output_prefix: Path | None) -> tuple[list[dict], Path, str]:
+    resolved_source = source or DEFAULT_LEVELS_DIR
+    resolved_output_prefix = output_prefix or DEFAULT_OUTPUT_PREFIX
+
+    if resolved_source.is_dir():
+        return (
+            load_levels_from_directory(resolved_source),
+            resolved_output_prefix,
+            f"numbered level files in {display_path(resolved_source)}",
+        )
+
+    return (
+        load_levels_from_legacy_file(resolved_source),
+        resolved_output_prefix,
+        resolved_source.name,
+    )
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        description="Convert numbered level JSON files into GBDK-friendly C source and header files."
+    )
+    parser.add_argument(
+        "source",
+        nargs="?",
+        type=Path,
+        help="Directory containing numbered level JSON files. Defaults to src/levels.",
+    )
+    parser.add_argument(
+        "output_prefix",
+        nargs="?",
+        type=Path,
+        help="Output path without extension. Defaults to src/levels_generated.",
+    )
+    args = parser.parse_args()
+    levels_raw, output_prefix, source_name = resolve_sources(args.source, args.output_prefix)
 
     levels = []
     max_fish_on_screen = 1
@@ -352,7 +418,7 @@ def main() -> int:
             max_fish_on_screen = level["max_fish_on_screen"]
 
     output_prefix.with_suffix(".h").write_text(render_header(len(levels), max_fish_on_screen))
-    output_prefix.with_suffix(".c").write_text(render_c(levels, source.name))
+    output_prefix.with_suffix(".c").write_text(render_c(levels, source_name))
     return 0
 
 

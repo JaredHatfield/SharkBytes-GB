@@ -7,6 +7,7 @@ import re
 import struct
 import sys
 import zlib
+from dataclasses import dataclass
 from pathlib import Path
 
 
@@ -16,6 +17,26 @@ DMG_LIGHT = (139, 172, 15, 255)
 DMG_DARK = (48, 98, 48, 255)
 DMG_DARKEST = (15, 56, 15, 255)
 DMG_OPAQUE = [DMG_LIGHT, DMG_DARK, DMG_DARKEST]
+REPO_ROOT = Path(__file__).resolve().parent.parent
+DEFAULT_SPRITES_DIR = REPO_ROOT / "src" / "sprites"
+
+
+@dataclass(frozen=True)
+class BatchSpriteConfig:
+    output_base_name: str | None = None
+    symbol: str | None = None
+    scale: int = 1
+    include_in_batch: bool = True
+
+
+BATCH_CONFIG = {
+    "diver_standing.piskel": BatchSpriteConfig(
+        output_base_name="diver_title_sprite",
+        symbol="diver_title_sprite",
+        scale=3,
+    ),
+    "diver_front.piskel": BatchSpriteConfig(include_in_batch=False),
+}
 
 
 def sanitize_symbol(name):
@@ -25,6 +46,13 @@ def sanitize_symbol(name):
     if symbol[0].isdigit():
         symbol = f"sprite_{symbol}"
     return symbol
+
+
+def display_path(path):
+    try:
+        return path.relative_to(REPO_ROOT).as_posix()
+    except ValueError:
+        return path.as_posix()
 
 
 def read_png_rgba(png_bytes):
@@ -536,7 +564,7 @@ def generate_sprite(input_path, output_base, symbol, scale):
         symbol,
         header_path.name,
         guard,
-        input_path.as_posix(),
+        display_path(input_path),
         tiles,
         frame_tilemaps,
         frame_hitboxes,
@@ -547,13 +575,40 @@ def generate_sprite(input_path, output_base, symbol, scale):
     source_path.write_text(source_text)
 
 
+def batch_specs(sprite_dir):
+    piskel_paths = sorted(sprite_dir.glob("*.piskel"))
+
+    if not piskel_paths:
+        raise ValueError(f"no .piskel files found in {sprite_dir}")
+
+    for input_path in piskel_paths:
+        config = BATCH_CONFIG.get(input_path.name, BatchSpriteConfig())
+        if not config.include_in_batch:
+            continue
+
+        output_base_name = config.output_base_name or f"{input_path.stem}_sprite"
+        symbol = sanitize_symbol(config.symbol or output_base_name)
+        yield input_path, sprite_dir / output_base_name, symbol, config.scale
+
+
+def generate_batch(sprite_dir):
+    for input_path, output_base, symbol, scale in batch_specs(sprite_dir):
+        generate_sprite(input_path, output_base, symbol, scale)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Convert a Piskel sprite into GBDK-friendly C source and header files."
     )
-    parser.add_argument("input", type=Path, help="Path to the source .piskel file")
+    parser.add_argument(
+        "input",
+        nargs="?",
+        type=Path,
+        help="Path to the source .piskel file. Omit to batch-generate the repo's runtime sprite assets.",
+    )
     parser.add_argument(
         "output_base",
+        nargs="?",
         type=Path,
         help="Output path without extension, for example src/sprites/mint_sprite",
     )
@@ -570,9 +625,19 @@ def main():
     args = parser.parse_args()
 
     try:
-        symbol = sanitize_symbol(args.symbol or args.output_base.name)
         if args.scale < 1:
             raise ValueError("scale must be at least 1")
+
+        if args.input is None and args.output_base is None:
+            if args.symbol is not None:
+                raise ValueError("--symbol requires an explicit input and output_base")
+            generate_batch(DEFAULT_SPRITES_DIR)
+            return
+
+        if args.input is None or args.output_base is None:
+            raise ValueError("input and output_base must be provided together")
+
+        symbol = sanitize_symbol(args.symbol or args.output_base.name)
         generate_sprite(args.input, args.output_base, symbol, args.scale)
     except Exception as exc:
         print(f"error: {exc}", file=sys.stderr)

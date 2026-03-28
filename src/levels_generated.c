@@ -1,6 +1,6 @@
 #include "levels_generated.h"
 
-/* Generated from levels.json by scripts/levels_to_c.py. */
+/* Generated from numbered level files in src/levels by scripts/levels_to_c.py. */
 
 static const LevelFishTypeDefinition level_0_fish_types[] = {
     { LEVEL_FISH_KIND_CLOWN, 56u, 16u, 152u, 6u, 1200u, 60u, 1u },

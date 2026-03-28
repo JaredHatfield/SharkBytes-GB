@@ -18,7 +18,7 @@ Pressing A or Start on the selected unlocked level opens that level. Locked leve
 
 ## Level 1: Bubble
 
-Level 1 is now a basic playable catch-and-survive room driven by [`levels.json`](./levels.json).
+Level 1 is now a basic playable catch-and-survive room driven by [`src/levels/01.json`](./src/levels/01.json).
 
 - The player controls the `diver_swimming` sprite.
 - Fish spawn from the level definition up to the configured on-screen limit. Level 1 uses a pool of clown and puffer fish, keeps two fish on screen at a time, and requires catching 10 fish to clear the stage.
@@ -44,13 +44,14 @@ Level 1 is now a basic playable catch-and-survive room driven by [`levels.json`]
 
 ## Level Data
 
-`levels.json` is the authored source of truth for balancing values and level content. The build converts it into C data before compiling the ROM.
+The authored source of truth for balancing values and level content lives in numbered JSON files under [`src/levels/`](./src/levels). The build converts those files into C data before compiling the ROM.
 
 - Each level can define whether it is implemented, its display name, starting hearts, starting air, goal fish count, air bubble behavior, and fish spawning behavior.
 - Player settings define the diver animation cadence for that level.
 - Air settings define whether bubbles are enabled, how much air a pickup restores, how often air drains, how often pickups spawn, and how quickly they rise.
 - Fish settings define the maximum fish on screen plus the list of fish types that can spawn for that level.
 - Each fish type defines its sprite kind, swim speed, lifetime, lane, patrol bounds, starting side, and animation cadence.
+- Files are loaded in numeric filename order, so `01.json` is level 1, `02.json` is level 2, and so on.
 
 ## Placeholder Levels
 

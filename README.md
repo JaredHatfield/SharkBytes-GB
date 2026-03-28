@@ -4,6 +4,8 @@ A minimal Game Boy project scaffold built with [GBDK-2020](https://github.com/gb
 
 Right now the ROM only boots to a title screen that displays `Shark Bytes`.
 
+Official gameplay sprite art lives in `src/sprites/*.piskel`. Numbered level source files live in `src/levels/*.json`. The build regenerates both generated sprite C files and generated level C files before compiling the ROM.
+
 ## Build
 
 Install the official GBDK SDK once:
@@ -16,6 +18,13 @@ Then build the ROM:
 
 ```sh
 just build
+```
+
+To regenerate only the authored assets:
+
+```sh
+just sprites
+just levels
 ```
 
 You can override the local SDK path with an existing installation:
