@@ -1,0 +1,50 @@
+{
+  "levels": [
+    {
+      "name": "Bubble",
+      "implemented": true,
+      "starting_hearts": 3,
+      "starting_air": 8,
+      "goal_fish": 2,
+      "air": {
+        "enabled": true,
+        "air_gain": 2,
+        "loss_every_seconds": 4,
+        "spawn_every_seconds": 3,
+        "rise_pixels_per_second": 8
+      },
+      "fish": {
+        "max_on_screen": 2,
+        "types": [
+          {
+            "kind": "yellow",
+            "speed_pixels_per_second": 24,
+            "lifetime_seconds": 20,
+            "spawn_y": 56,
+            "min_x": 16,
+            "max_x": 152,
+            "start_side": "left"
+          },
+          {
+            "kind": "striped",
+            "speed_pixels_per_second": 18,
+            "lifetime_seconds": 20,
+            "spawn_y": 88,
+            "min_x": 16,
+            "max_x": 152,
+            "start_side": "right"
+          }
+        ]
+      }
+    },
+    { "name": "TBD", "implemented": false },
+    { "name": "TBD", "implemented": false },
+    { "name": "TBD", "implemented": false },
+    { "name": "TBD", "implemented": false },
+    { "name": "TBD", "implemented": false },
+    { "name": "TBD", "implemented": false },
+    { "name": "TBD", "implemented": false },
+    { "name": "TBD", "implemented": false },
+    { "name": "TBD", "implemented": false }
+  ]
+}
