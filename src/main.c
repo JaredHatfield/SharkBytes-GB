@@ -148,7 +148,7 @@ static PlayerState player;
 static ActiveFishState active_fish[LEVELS_MAX_FISH_ON_SCREEN];
 static AirPickupState air_pickup;
 static UINT8 level_unlocked[LEVEL_COUNT] = { 1u };
-static UINT8 level_animation_tick = 0u;
+static UINT16 level_animation_tick = 0u;
 static UINT8 player_air = 0u;
 static UINT8 player_health = 0u;
 static UINT8 captured_fish_count = 0u;
@@ -249,6 +249,36 @@ static UINT8 boxes_overlap(UINT8 ax, UINT8 ay, UINT8 aw, UINT8 ah, UINT8 bx, UIN
     }
 
     return 1u;
+}
+
+static UINT8 hitbox_value(const unsigned char *hitboxes, UINT8 frame, UINT8 offset) {
+    return hitboxes[(frame * 4u) + offset];
+}
+
+static void resolve_frame_hitbox(
+    UINT8 sprite_x,
+    UINT8 sprite_y,
+    UINT8 sprite_width,
+    const unsigned char *hitboxes,
+    UINT8 frame,
+    UINT8 mirrored,
+    UINT8 *left,
+    UINT8 *top,
+    UINT8 *width,
+    UINT8 *height
+) {
+    UINT8 local_left = hitbox_value(hitboxes, frame, 0u);
+    UINT8 local_top = hitbox_value(hitboxes, frame, 1u);
+
+    *width = hitbox_value(hitboxes, frame, 2u);
+    *height = hitbox_value(hitboxes, frame, 3u);
+
+    if (mirrored) {
+        local_left = (UINT8)(sprite_width - local_left - *width);
+    }
+
+    *left = (UINT8)(sprite_to_left(sprite_x) + local_left);
+    *top = (UINT8)(sprite_to_top(sprite_y) + local_top);
 }
 
 static UINT8 fish_slot_sprite_index(UINT8 slot_index) {
@@ -369,24 +399,77 @@ static void draw_level_placeholder_screen(UINT8 level_index) {
     printf("START: BACK");
 }
 
-static void draw_diver_sprite(UINT8 x, UINT8 y, UINT8 facing_left) {
-    UINT8 base_tile = PLAYER_TILE_FIRST;
+static UINT8 current_player_frame(void) {
+    if ((current_level == 0) ||
+        (DIVER_SWIMMING_SPRITE_FRAME_COUNT < 2u) ||
+        (current_level->player.animation_frames == 0u)) {
+        return 0u;
+    }
+
+    return (UINT8)((level_animation_tick / current_level->player.animation_frames) % DIVER_SWIMMING_SPRITE_FRAME_COUNT);
+}
+
+static void compute_diver_render_position(UINT8 *render_x, UINT8 *render_y) {
+    UINT8 player_x = FROM_FIXED(player.x);
+    UINT8 player_y = FROM_FIXED(player.y);
+    UINT8 diver_wave = (level_animation_tick >> 2) & 0x07u;
+    UINT8 diver_sway_wave = (level_animation_tick >> 3) & 0x07u;
+    INT8 sway_offset;
+
+    *render_x = player_x;
+    *render_y = apply_render_offset(player_y, swim_bob_offsets[diver_wave], LEVEL_MIN_Y, LEVEL_MAX_Y);
+
+    if ((player.velocity_x > -4) && (player.velocity_x < 4)) {
+        sway_offset = idle_sway_offsets[diver_sway_wave];
+        if (player.facing_left) {
+            sway_offset = (INT8)(-sway_offset);
+        }
+
+        *render_x = apply_render_offset(player_x, sway_offset, LEVEL_MIN_X, LEVEL_MAX_X);
+    }
+}
+
+static void compute_fish_render_position(UINT8 slot_index, UINT8 *render_x, UINT8 *render_y) {
+    UINT8 fish_wave = (UINT8)(((level_animation_tick >> 2) + (slot_index << 2)) & 0x07u);
+
+    *render_x = FROM_FIXED(active_fish[slot_index].x);
+    *render_y = apply_render_offset(
+        active_fish[slot_index].y,
+        swim_bob_offsets[fish_wave],
+        LEVEL_MIN_Y,
+        (UINT8)(PLAYFIELD_VISIBLE_BOTTOM - active_fish[slot_index].height + 17u)
+    );
+}
+
+static const unsigned char *fish_hitboxes_for_kind(UINT8 kind) {
+    if (kind == LEVEL_FISH_KIND_YELLOW) {
+        return fish_yellow_sprite_frame_hitboxes;
+    }
+
+    return fish_striped_sprite_frame_hitboxes;
+}
+
+static void draw_diver_sprite(UINT8 x, UINT8 y, UINT8 frame, UINT8 facing_left) {
     UINT8 sprite_index = PLAYER_SPRITE_FIRST;
+    UINT8 tilemap_index = (UINT8)(frame * DIVER_SWIMMING_SPRITE_TILES_PER_FRAME);
     UINT8 row;
     UINT8 col;
     UINT8 source_col;
-    UINT8 tile_index;
 
     for (row = 0u; row != DIVER_SWIMMING_SPRITE_HEIGHT_TILES; ++row) {
         for (col = 0u; col != DIVER_SWIMMING_SPRITE_WIDTH_TILES; ++col) {
             source_col = facing_left
                 ? (UINT8)(DIVER_SWIMMING_SPRITE_WIDTH_TILES - 1u - col)
                 : col;
-            tile_index = (UINT8)(
-                base_tile + (row * DIVER_SWIMMING_SPRITE_WIDTH_TILES) + source_col
-            );
 
-            set_sprite_tile(sprite_index, tile_index);
+            set_sprite_tile(
+                sprite_index,
+                (UINT8)(
+                    PLAYER_TILE_FIRST + diver_swimming_sprite_frame_tilemap[
+                        tilemap_index + (row * DIVER_SWIMMING_SPRITE_WIDTH_TILES) + source_col
+                    ]
+                )
+            );
             move_sprite(sprite_index, x + (col << 3), y + (row << 3));
             set_sprite_prop(sprite_index, facing_left ? S_FLIPX : 0u);
             ++sprite_index;
@@ -448,12 +531,10 @@ static void draw_level_result_message(UINT8 won) {
 
     if (won) {
         print_centered(7u, "LEVEL CLEAR");
-        print_centered(9u, "A: AGAIN");
-        print_centered(11u, "START: BACK");
+        print_centered(9u, "START: CONT");
     } else {
         print_centered(7u, level_failure_reason == LEVEL_FAILURE_AIR ? "OUT OF AIR" : "NO HEALTH");
-        print_centered(9u, "A: RETRY");
-        print_centered(11u, "START: BACK");
+        print_centered(9u, "START: CONT");
     }
 }
 
@@ -720,28 +801,15 @@ static void render_fish(UINT8 slot_index, const ActiveFishState *fish, UINT8 x, 
 }
 
 static void render_level(void) {
-    UINT8 player_x = FROM_FIXED(player.x);
-    UINT8 player_y = FROM_FIXED(player.y);
-    UINT8 diver_wave = (level_animation_tick >> 2) & 0x07u;
-    UINT8 diver_sway_wave = (level_animation_tick >> 3) & 0x07u;
-    UINT8 diver_render_x = player_x;
-    UINT8 diver_render_y = apply_render_offset(player_y, swim_bob_offsets[diver_wave], LEVEL_MIN_Y, LEVEL_MAX_Y);
+    UINT8 diver_render_x;
+    UINT8 diver_render_y;
+    UINT8 player_frame = current_player_frame();
     UINT8 slot_index;
-    UINT8 fish_wave;
     UINT8 fish_x;
     UINT8 fish_y;
-    INT8 sway_offset;
 
-    if ((player.velocity_x > -4) && (player.velocity_x < 4)) {
-        sway_offset = idle_sway_offsets[diver_sway_wave];
-        if (player.facing_left) {
-            sway_offset = (INT8)(-sway_offset);
-        }
-
-        diver_render_x = apply_render_offset(player_x, sway_offset, LEVEL_MIN_X, LEVEL_MAX_X);
-    }
-
-    draw_diver_sprite(diver_render_x, diver_render_y, player.facing_left);
+    compute_diver_render_position(&diver_render_x, &diver_render_y);
+    draw_diver_sprite(diver_render_x, diver_render_y, player_frame, player.facing_left);
 
     for (slot_index = 0u; slot_index != LEVELS_MAX_FISH_ON_SCREEN; ++slot_index) {
         if (!active_fish[slot_index].active) {
@@ -749,14 +817,7 @@ static void render_level(void) {
             continue;
         }
 
-        fish_wave = (UINT8)(((level_animation_tick >> 2) + (slot_index << 2)) & 0x07u);
-        fish_x = FROM_FIXED(active_fish[slot_index].x);
-        fish_y = apply_render_offset(
-            active_fish[slot_index].y,
-            swim_bob_offsets[fish_wave],
-            LEVEL_MIN_Y,
-            (UINT8)(PLAYFIELD_VISIBLE_BOTTOM - active_fish[slot_index].height + 17u)
-        );
+        compute_fish_render_position(slot_index, &fish_x, &fish_y);
         render_fish(slot_index, &active_fish[slot_index], fish_x, fish_y);
     }
 
@@ -789,31 +850,63 @@ static void collect_air_pickup(void) {
 }
 
 static void check_level_collisions(void) {
-    UINT8 player_left = sprite_to_left(FROM_FIXED(player.x));
-    UINT8 player_top = sprite_to_top(FROM_FIXED(player.y));
+    UINT8 player_render_x;
+    UINT8 player_render_y;
+    UINT8 player_frame = current_player_frame();
+    UINT8 player_left;
+    UINT8 player_top;
+    UINT8 player_width;
+    UINT8 player_height;
     UINT8 slot_index;
     UINT8 fish_left;
     UINT8 fish_top;
+    UINT8 fish_width;
+    UINT8 fish_height;
     UINT8 bubble_left;
     UINT8 bubble_top;
+
+    compute_diver_render_position(&player_render_x, &player_render_y);
+    resolve_frame_hitbox(
+        player_render_x,
+        player_render_y,
+        DIVER_SWIMMING_SPRITE_WIDTH,
+        diver_swimming_sprite_frame_hitboxes,
+        player_frame,
+        player.facing_left,
+        &player_left,
+        &player_top,
+        &player_width,
+        &player_height
+    );
 
     for (slot_index = 0u; slot_index != LEVELS_MAX_FISH_ON_SCREEN; ++slot_index) {
         if (!active_fish[slot_index].active) {
             continue;
         }
 
-        fish_left = sprite_to_left(FROM_FIXED(active_fish[slot_index].x));
-        fish_top = sprite_to_top(active_fish[slot_index].y);
+        compute_fish_render_position(slot_index, &fish_left, &fish_top);
+        resolve_frame_hitbox(
+            fish_left,
+            fish_top,
+            active_fish[slot_index].width,
+            fish_hitboxes_for_kind(active_fish[slot_index].kind),
+            0u,
+            active_fish[slot_index].velocity_x > 0,
+            &fish_left,
+            &fish_top,
+            &fish_width,
+            &fish_height
+        );
 
         if (boxes_overlap(
             player_left,
             player_top,
-            DIVER_SWIMMING_SPRITE_WIDTH,
-            DIVER_SWIMMING_SPRITE_HEIGHT,
+            player_width,
+            player_height,
             fish_left,
             fish_top,
-            active_fish[slot_index].width,
-            active_fish[slot_index].height
+            fish_width,
+            fish_height
         )) {
             capture_fish(slot_index);
         }
@@ -829,8 +922,8 @@ static void check_level_collisions(void) {
     if (boxes_overlap(
         player_left,
         player_top,
-        DIVER_SWIMMING_SPRITE_WIDTH,
-        DIVER_SWIMMING_SPRITE_HEIGHT,
+        player_width,
+        player_height,
         bubble_left,
         bubble_top,
         8u,
@@ -948,10 +1041,7 @@ void main(void) {
                 }
             }
         } else if ((screen == SCREEN_LEVEL_COMPLETE) || (screen == SCREEN_LEVEL_FAILED)) {
-            if (pressed_keys & J_A) {
-                begin_level(selected_level);
-                screen = SCREEN_LEVEL_PLAYING;
-            } else if (pressed_keys & J_START) {
+            if (pressed_keys & J_START) {
                 screen = SCREEN_LEVEL_SELECT;
                 draw_level_select_screen(selected_level);
             }

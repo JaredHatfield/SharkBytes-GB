@@ -32,12 +32,17 @@ typedef struct LevelAirDefinition {
     UINT8 rise_speed_fixed;
 } LevelAirDefinition;
 
+typedef struct LevelPlayerDefinition {
+    UINT16 animation_frames;
+} LevelPlayerDefinition;
+
 typedef struct LevelDefinition {
     const char *name;
     UINT8 implemented;
     UINT8 starting_hearts;
     UINT8 starting_air;
     UINT8 goal_fish;
+    LevelPlayerDefinition player;
     UINT8 max_fish_on_screen;
     UINT8 fish_type_count;
     const LevelFishTypeDefinition *fish_types;

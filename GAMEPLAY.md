@@ -28,6 +28,7 @@ Level 1 is now a basic playable catch-and-survive room driven by [`levels.json`]
 - Pressing B gives the diver a downward dive impulse.
 - Vertical movement is tap-driven. Each tap creates a short burst that eases back to neutral instead of leaving the diver drifting.
 - Repeated taps can be chained together to climb or descend faster.
+- The diver uses the authored animated swimming sprite. The level definition controls how long each animation frame is shown before switching to the next pose.
 - The diver has a subtle swimming bob while moving, and an idle forward-back sway while holding position.
 - The top HUD uses the background layer and divider line. Hearts are on the first row and air bubbles are on the second row.
 - Health always has a hard cap of 3 hearts and air always has a hard cap of 10 bubbles. Each level chooses the starting amount for both values.
@@ -37,13 +38,14 @@ Level 1 is now a basic playable catch-and-survive room driven by [`levels.json`]
 - Catching the level-defined goal number of fish clears the level and unlocks the next one.
 - Running out of air fails the level.
 - Pressing Start returns to level select.
-- After clearing or failing the level, pressing A immediately replays level 1 and pressing Start returns to level select.
+- After clearing or failing the level, only Start advances past the result screen and returns to level select.
 
 ## Level Data
 
 `levels.json` is the authored source of truth for balancing values and level content. The build converts it into C data before compiling the ROM.
 
 - Each level can define whether it is implemented, its display name, starting hearts, starting air, goal fish count, air bubble behavior, and fish spawning behavior.
+- Player settings define the diver animation cadence for that level.
 - Air settings define whether bubbles are enabled, how much air a pickup restores, how often air drains, how often pickups spawn, and how quickly they rise.
 - Fish settings define the maximum fish on screen plus the list of fish types that can spawn for that level.
 - Each fish type defines its sprite kind, swim speed, lifetime, lane, patrol bounds, and starting side.

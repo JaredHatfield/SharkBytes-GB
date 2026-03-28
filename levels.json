@@ -6,6 +6,9 @@
       "starting_hearts": 3,
       "starting_air": 8,
       "goal_fish": 2,
+      "player": {
+        "animation_seconds_per_frame": 1
+      },
       "air": {
         "enabled": true,
         "air_gain": 2,

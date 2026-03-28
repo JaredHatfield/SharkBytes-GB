@@ -11,6 +11,11 @@ from pathlib import Path
 
 
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+DMG_BACKGROUND = (155, 188, 15, 255)
+DMG_LIGHT = (139, 172, 15, 255)
+DMG_DARK = (48, 98, 48, 255)
+DMG_DARKEST = (15, 56, 15, 255)
+DMG_OPAQUE = [DMG_LIGHT, DMG_DARK, DMG_DARKEST]
 
 
 def sanitize_symbol(name):
@@ -200,24 +205,31 @@ def build_layer_frames(layer, frame_width, frame_height):
         _, _, pixels = read_png_rgba(base64.b64decode(chunk["base64PNG"].split(",", 1)[1]))
         chunks.append(pixels)
 
-    layout = layer["chunks"][0]["layout"]
-    rows = len(layout)
-    cols = len(layout[0]) if rows else 0
-    chunk_height = len(chunks[0])
-    chunk_width = len(chunks[0][0])
-    sheet = empty_canvas(cols * chunk_width, rows * chunk_height)
+    if frame_width % 8 != 0 or frame_height % 8 != 0:
+        raise ValueError("sprite dimensions must be multiples of 8 pixels")
 
-    for row_index, row in enumerate(layout):
-        for col_index, chunk_index in enumerate(row):
-            blit(sheet, chunks[chunk_index], col_index * chunk_width, row_index * chunk_height)
+    if not chunks:
+        raise ValueError("piskel layer has no chunks")
+
+    if len(chunks) == 1:
+        sheet = chunks[0]
+    else:
+        layout = layer["chunks"][0]["layout"]
+        rows = len(layout)
+        cols = len(layout[0]) if rows else 0
+        chunk_height = len(chunks[0])
+        chunk_width = len(chunks[0][0])
+        sheet = empty_canvas(cols * chunk_width, rows * chunk_height)
+
+        for row_index, row in enumerate(layout):
+            for col_index, chunk_index in enumerate(row):
+                blit(sheet, chunks[chunk_index], col_index * chunk_width, row_index * chunk_height)
 
     frames_per_row = len(sheet[0]) // frame_width
     frames_per_col = len(sheet) // frame_height
     frame_capacity = frames_per_row * frames_per_col
     frame_count = layer["frameCount"]
 
-    if frame_width % 8 != 0 or frame_height % 8 != 0:
-        raise ValueError("sprite dimensions must be multiples of 8 pixels")
     if frame_capacity < frame_count:
         raise ValueError("layer sprite sheet does not contain all declared frames")
 
@@ -263,44 +275,88 @@ def load_piskel_frames(path):
     return width, height, frames
 
 
-def palette_map(frames):
-    opaque_colors = {}
-    for frame in frames:
-        for row in frame:
-            for pixel in row:
-                if pixel[3] != 0:
-                    opaque_colors[(pixel[0], pixel[1], pixel[2])] = None
+def canonical_palette():
+    return {
+        (0, 0, 0, 0): 0,
+        DMG_LIGHT: 1,
+        DMG_DARK: 2,
+        DMG_DARKEST: 3,
+    }
 
-    if len(opaque_colors) > 3:
-        raise ValueError(
-            "sprite uses more than 3 opaque colors; Game Boy OBJ sprites support 3 plus transparency"
+
+def nearest_canonical_opaque(pixel):
+    best_color = DMG_OPAQUE[0]
+    best_distance = None
+
+    for candidate in DMG_OPAQUE:
+        distance = (
+            ((pixel[0] - candidate[0]) * (pixel[0] - candidate[0]))
+            + ((pixel[1] - candidate[1]) * (pixel[1] - candidate[1]))
+            + ((pixel[2] - candidate[2]) * (pixel[2] - candidate[2]))
         )
+        if best_distance is None or distance < best_distance:
+            best_distance = distance
+            best_color = candidate
 
-    def brightness(color):
-        return (color[0] * 299) + (color[1] * 587) + (color[2] * 114)
+    return best_color
 
-    ordered_colors = sorted(opaque_colors, key=brightness, reverse=True)
-    palette = {(0, 0, 0, 0): 0}
-    for index, color in enumerate(ordered_colors, start=1):
-        palette[(color[0], color[1], color[2], 255)] = index
-    return palette
+
+def dominant_corner_background(frame):
+    corners = [
+        frame[0][0],
+        frame[0][-1],
+        frame[-1][0],
+        frame[-1][-1],
+    ]
+    counts = {}
+
+    for pixel in corners:
+        counts[pixel] = counts.get(pixel, 0) + 1
+
+    background = max(counts, key=counts.get)
+    if background[3] == 0 or counts[background] < 3:
+        return None
+    return background
+
+
+def normalize_frames(frames):
+    normalized_frames = []
+
+    for frame in frames:
+        background = dominant_corner_background(frame)
+        normalized = empty_canvas(len(frame[0]), len(frame))
+
+        for y, row in enumerate(frame):
+            for x, pixel in enumerate(row):
+                if pixel[3] == 0:
+                    normalized[y][x] = (0, 0, 0, 0)
+                elif background is not None and pixel == background:
+                    normalized[y][x] = (0, 0, 0, 0)
+                else:
+                    normalized[y][x] = nearest_canonical_opaque(pixel)
+
+        normalized_frames.append(normalized)
+
+    return normalized_frames
 
 
 def sprite_value(pixel, palette):
     if pixel[3] == 0:
         return 0
-    key = (pixel[0], pixel[1], pixel[2], 255)
-    if key not in palette:
-        raise ValueError(f"opaque pixel color {key[:3]} is not in the generated palette")
-    return palette[key]
+    if pixel not in palette:
+        raise ValueError(f"opaque pixel color {pixel[:3]} is not in the generated palette")
+    return palette[pixel]
 
 
-def encode_tiles(frames, width, height, palette):
-    tiles = []
+def encode_frames(frames, width, height, palette):
+    unique_tiles = []
+    tile_lookup = {}
+    frame_tilemaps = []
     width_tiles = width // 8
     height_tiles = height // 8
 
     for frame in frames:
+        tilemap = []
         for tile_y in range(height_tiles):
             for tile_x in range(width_tiles):
                 tile_bytes = []
@@ -316,12 +372,54 @@ def encode_tiles(frames, width, height, palette):
                         if value & 0x02:
                             high |= 1 << (7 - col)
                     tile_bytes.extend((low, high))
-                tiles.append(tile_bytes)
+                tile_key = tuple(tile_bytes)
+                if tile_key not in tile_lookup:
+                    tile_lookup[tile_key] = len(unique_tiles)
+                    unique_tiles.append(tile_bytes)
+                tilemap.append(tile_lookup[tile_key])
+        frame_tilemaps.append(tilemap)
 
-    return tiles
+    return unique_tiles, frame_tilemaps
 
 
-def render_header(symbol, guard, width, height, frame_count):
+def compute_frame_hitboxes(frames):
+    hitboxes = []
+
+    for frame in frames:
+        minimum_x = None
+        minimum_y = None
+        maximum_x = None
+        maximum_y = None
+
+        for y, row in enumerate(frame):
+            for x, pixel in enumerate(row):
+                if pixel[3] == 0:
+                    continue
+                if minimum_x is None or x < minimum_x:
+                    minimum_x = x
+                if minimum_y is None or y < minimum_y:
+                    minimum_y = y
+                if maximum_x is None or x > maximum_x:
+                    maximum_x = x
+                if maximum_y is None or y > maximum_y:
+                    maximum_y = y
+
+        if minimum_x is None:
+            hitboxes.append((0, 0, 0, 0))
+        else:
+            hitboxes.append(
+                (
+                    minimum_x,
+                    minimum_y,
+                    (maximum_x - minimum_x) + 1,
+                    (maximum_y - minimum_y) + 1,
+                )
+            )
+
+    return hitboxes
+
+
+def render_header(symbol, guard, width, height, frame_count, tile_count):
     width_tiles = width // 8
     height_tiles = height // 8
     tiles_per_frame = width_tiles * height_tiles
@@ -336,9 +434,13 @@ def render_header(symbol, guard, width, height, frame_count):
 #define {guard}_HEIGHT_TILES {height_tiles}u
 #define {guard}_FRAME_COUNT {frame_count}u
 #define {guard}_TILES_PER_FRAME ({guard}_WIDTH_TILES * {guard}_HEIGHT_TILES)
-#define {guard}_TILE_COUNT ({guard}_FRAME_COUNT * {guard}_TILES_PER_FRAME)
+#define {guard}_TILE_COUNT {tile_count}u
+#define {guard}_FRAME_TILEMAP_LENGTH ({guard}_FRAME_COUNT * {guard}_TILES_PER_FRAME)
+#define {guard}_FRAME_HITBOX_STRIDE 4u
 
 extern const unsigned char {symbol}_tiles[];
+extern const unsigned char {symbol}_frame_tilemap[];
+extern const unsigned char {symbol}_frame_hitboxes[];
 
 void {symbol}_show(UINT8 first_tile, UINT8 first_sprite, UINT8 frame, UINT8 x, UINT8 y);
 
@@ -346,7 +448,7 @@ void {symbol}_show(UINT8 first_tile, UINT8 first_sprite, UINT8 frame, UINT8 x, U
 """
 
 
-def render_source(symbol, header_name, guard, input_path, tiles):
+def render_source(symbol, header_name, guard, input_path, tiles, frame_tilemaps, frame_hitboxes):
     lines = [
         f'#include "{header_name}"',
         "",
@@ -365,18 +467,46 @@ def render_source(symbol, header_name, guard, input_path, tiles):
         [
             "};",
             "",
+            f"const unsigned char {symbol}_frame_tilemap[] = {{",
+        ]
+    )
+
+    flat_tilemap = [value for tilemap in frame_tilemaps for value in tilemap]
+    if flat_tilemap:
+        for offset in range(0, len(flat_tilemap), 8):
+            row_values = ", ".join(f"{value}u" for value in flat_tilemap[offset : offset + 8])
+            suffix = "," if offset + 8 < len(flat_tilemap) else ""
+            lines.append(f"    {row_values}{suffix}")
+    lines.extend(
+        [
+            "};",
+            "",
+            f"const unsigned char {symbol}_frame_hitboxes[] = {{",
+        ]
+    )
+
+    flat_hitboxes = [value for hitbox in frame_hitboxes for value in hitbox]
+    if flat_hitboxes:
+        for offset in range(0, len(flat_hitboxes), 8):
+            row_values = ", ".join(f"{value}u" for value in flat_hitboxes[offset : offset + 8])
+            suffix = "," if offset + 8 < len(flat_hitboxes) else ""
+            lines.append(f"    {row_values}{suffix}")
+    lines.extend(
+        [
+            "};",
+            "",
             f"void {symbol}_show(UINT8 first_tile, UINT8 first_sprite, UINT8 frame, UINT8 x, UINT8 y) {{",
             "    UINT8 sprite_index = first_sprite;",
-            f"    UINT8 tile_index = first_tile + (frame * {guard}_TILES_PER_FRAME);",
+            f"    UINT8 tilemap_index = frame * {guard}_TILES_PER_FRAME;",
             "    UINT8 row;",
             "    UINT8 col;",
             "",
             f"    for (row = 0; row != {guard}_HEIGHT_TILES; ++row) {{",
             f"        for (col = 0; col != {guard}_WIDTH_TILES; ++col) {{",
-            "            set_sprite_tile(sprite_index, tile_index);",
+            f"            set_sprite_tile(sprite_index, first_tile + {symbol}_frame_tilemap[tilemap_index]);",
             "            move_sprite(sprite_index, x + (col << 3), y + (row << 3));",
             "            ++sprite_index;",
-            "            ++tile_index;",
+            "            ++tilemap_index;",
             "        }",
             "    }",
             "}",
@@ -392,15 +522,25 @@ def generate_sprite(input_path, output_base, symbol, scale):
     width *= scale
     height *= scale
     frames = [scale_frame(frame, scale) for frame in frames]
-    palette = palette_map(frames)
-    tiles = encode_tiles(frames, width, height, palette)
+    frames = normalize_frames(frames)
+    palette = canonical_palette()
+    tiles, frame_tilemaps = encode_frames(frames, width, height, palette)
+    frame_hitboxes = compute_frame_hitboxes(frames)
 
     guard = sanitize_symbol(symbol).upper()
     header_path = output_base.with_suffix(".h")
     source_path = output_base.with_suffix(".c")
 
-    header_text = render_header(symbol, guard, width, height, len(frames))
-    source_text = render_source(symbol, header_path.name, guard, input_path.as_posix(), tiles)
+    header_text = render_header(symbol, guard, width, height, len(frames), len(tiles))
+    source_text = render_source(
+        symbol,
+        header_path.name,
+        guard,
+        input_path.as_posix(),
+        tiles,
+        frame_tilemaps,
+        frame_hitboxes,
+    )
 
     header_path.parent.mkdir(parents=True, exist_ok=True)
     header_path.write_text(header_text)

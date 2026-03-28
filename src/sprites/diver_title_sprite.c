@@ -58,18 +58,28 @@ const unsigned char diver_title_sprite_tiles[] = {
     0x00, 0xC0, 0x00, 0xF8, 0x00, 0xF8, 0x00, 0xF8
 };
 
+const unsigned char diver_title_sprite_frame_tilemap[] = {
+    0u, 1u, 2u, 3u, 4u, 5u, 6u, 7u,
+    8u, 9u, 10u, 11u, 12u, 13u, 14u, 15u,
+    16u, 17u
+};
+
+const unsigned char diver_title_sprite_frame_hitboxes[] = {
+    0u, 6u, 24u, 42u
+};
+
 void diver_title_sprite_show(UINT8 first_tile, UINT8 first_sprite, UINT8 frame, UINT8 x, UINT8 y) {
     UINT8 sprite_index = first_sprite;
-    UINT8 tile_index = first_tile + (frame * DIVER_TITLE_SPRITE_TILES_PER_FRAME);
+    UINT8 tilemap_index = frame * DIVER_TITLE_SPRITE_TILES_PER_FRAME;
     UINT8 row;
     UINT8 col;
 
     for (row = 0; row != DIVER_TITLE_SPRITE_HEIGHT_TILES; ++row) {
         for (col = 0; col != DIVER_TITLE_SPRITE_WIDTH_TILES; ++col) {
-            set_sprite_tile(sprite_index, tile_index);
+            set_sprite_tile(sprite_index, first_tile + diver_title_sprite_frame_tilemap[tilemap_index]);
             move_sprite(sprite_index, x + (col << 3), y + (row << 3));
             ++sprite_index;
-            ++tile_index;
+            ++tilemap_index;
         }
     }
 }

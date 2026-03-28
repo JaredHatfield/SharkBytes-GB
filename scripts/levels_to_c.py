@@ -102,6 +102,7 @@ def parse_level(level_index: int, raw: dict) -> dict:
         "starting_hearts": 0,
         "starting_air": 0,
         "goal_fish": 0,
+        "player_animation_frames": 0,
         "max_fish_on_screen": 0,
         "fish_types": [],
         "air_enabled": 0,
@@ -131,6 +132,18 @@ def parse_level(level_index: int, raw: dict) -> dict:
         1,
         MAX_AIR,
         f"{prefix}.goal_fish",
+    )
+
+    player = raw.get("player")
+    if not isinstance(player, dict):
+        fail(f"{prefix}.player must be an object")
+
+    level["player_animation_frames"] = seconds_to_frames(
+        require_number(
+            player.get("animation_seconds_per_frame"),
+            f"{prefix}.player.animation_seconds_per_frame",
+        ),
+        f"{prefix}.player.animation_seconds_per_frame",
     )
 
     air = raw.get("air")
@@ -224,12 +237,17 @@ typedef struct LevelAirDefinition {{
     UINT8 rise_speed_fixed;
 }} LevelAirDefinition;
 
+typedef struct LevelPlayerDefinition {{
+    UINT16 animation_frames;
+}} LevelPlayerDefinition;
+
 typedef struct LevelDefinition {{
     const char *name;
     UINT8 implemented;
     UINT8 starting_hearts;
     UINT8 starting_air;
     UINT8 goal_fish;
+    LevelPlayerDefinition player;
     UINT8 max_fish_on_screen;
     UINT8 fish_type_count;
     const LevelFishTypeDefinition *fish_types;
@@ -275,13 +293,14 @@ def render_c(levels: list[dict], source_name: str) -> str:
     for index, level in enumerate(levels):
         fish_pointer = f"level_{index}_fish_types" if level["fish_types"] else "0"
         lines.append(
-            '    { "%s", %uu, %uu, %uu, %uu, %uu, %uu, %s, { %uu, %uu, %uu, %uu, %uu } },'
+            '    { "%s", %uu, %uu, %uu, %uu, { %uu }, %uu, %uu, %s, { %uu, %uu, %uu, %uu, %uu } },'
             % (
                 level["name"].replace("\\", "\\\\").replace('"', '\\"'),
                 level["implemented"],
                 level["starting_hearts"],
                 level["starting_air"],
                 level["goal_fish"],
+                level["player_animation_frames"],
                 level["max_fish_on_screen"],
                 len(level["fish_types"]),
                 fish_pointer,
